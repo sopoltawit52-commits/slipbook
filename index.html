@@ -101,7 +101,7 @@ nav.tabs .plus span{width:52px;height:52px;border-radius:18px;background:linear-
 .bigopt{border:1px solid var(--line);background:var(--bg);border-radius:16px;padding:18px 10px;text-align:center;cursor:pointer}
 .bigopt b{display:block;font-family:Kanit;font-weight:500;font-size:16px;margin-top:6px}
 .bigopt .e{font-size:30px}
-.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#13221D;color:#fff;padding:10px 16px;border-radius:12px;z-index:60;font-size:15px;max-width:90vw;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#13221D;color:#fff;padding:10px 16px;border-radius:12px;z-index:60;font-size:15px;max-width:90vw;white-space:pre-line;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
 .prog{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);width:min(440px,calc(100vw - 32px));background:var(--card);color:var(--text,inherit);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.18);z-index:65;padding:12px 14px;font-size:15px}
 .prog .ph{display:flex;align-items:center;gap:10px;font-family:Kanit;font-weight:500}
@@ -267,6 +267,8 @@ const icon = t => t.type === 'income' ? '🟢' : t.type === 'transfer' ? '🔁' 
 const CAT_IC = { 'อาหาร': '🍜', 'ของใช้': '🛒', 'เดินทาง': '⛽', 'บิล': '💡', 'ที่พัก': '🏠', 'ช้อป': '🛍️', 'สุขภาพ': '💊', 'การศึกษา': '📚', 'บันเทิง': '🎬', 'ผ่อน': '💳', 'ครอบครัว': '🙏' };
 const catIcon = c => { for (const k in CAT_IC) if (String(c).indexOf(k) === 0) return CAT_IC[k]; return '🔴'; };
 let toastT;
+const localToday = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const localNow = () => new Date().toTimeString().slice(0, 5);   // เวลาปัจจุบันของเครื่อง (ไม่ใช้เวลาตอนโหลดหน้า)
 function toast(msg, ms) { const el = $('#toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms || 2600); }
 
 /* ---------- API ---------- */
@@ -406,14 +408,14 @@ const catOpts = (type, cur) => type === 'transfer' ? '<option>โอนตัว
 /** ฟอร์มรายการ ใช้ทั้งเพิ่มใหม่ / แก้ไข / ตรวจสลิป */
 function txForm(mode, t) {
   $('#toast').classList.remove('show');
-  t = Object.assign({ type: 'expense', amount: '', date: D.today, time: D.now, category: '', party: '', note: '' }, t || {});
+  t = Object.assign({ type: 'expense', amount: '', date: localToday(), time: localNow(), category: '', party: '', note: '' }, t || {});
   const title = mode === 'add' ? '✏️ กรอกรายการ' : mode === 'edit' ? 'แก้ไขรายการ' : t.doc === 'receipt' ? '🧾 ตรวจบิลก่อนบันทึก' : '🧾 ตรวจสลิปก่อนบันทึก';
   openSheet(head(title) +
     (mode === 'slip' && t.dup ? '<div class="dup">⚠️ สลิปนี้อาจบันทึกไปแล้ว ตรวจดูก่อนกดบันทึก</div>' : '') +
     (t._img ? `<img class="slipthumb" src="${t._img}" alt="รูปสลิป">` : '') +
     `<div class="seg" id="fType">${['expense', 'income', 'transfer'].map(v => `<button type="button" data-v="${v}" class="${v === t.type ? 'on' : ''}">${TYPE_TH[v]}</button>`).join('')}</div>
     <label class="field"><span>จำนวนเงิน (บาท)</span><input class="amount-in" id="fAmt" inputmode="decimal" placeholder="0.00" value="${t.amount === '' ? '' : esc(t.amount)}"></label>
-    <div class="grid2"><label class="field"><span>วันที่</span><input type="date" id="fDate" value="${esc(t.date)}" max="${D.today}"></label>
+    <div class="grid2"><label class="field"><span>วันที่</span><input type="date" id="fDate" value="${esc(t.date)}" max="${localToday() > D.today ? localToday() : D.today}"></label>
     <label class="field"><span>เวลา</span><input type="time" id="fTime" value="${esc(t.time)}"></label></div>
     <label class="field" id="fCatWrap"><span>หมวด</span><select id="fCat">${catOpts(t.type, t.category)}</select></label>
     <label class="field"><span id="fPartyL">${t.type === 'income' ? 'รับจาก' : 'จ่ายให้ / ร้าน'}</span><input id="fParty" value="${esc(t.party)}" placeholder="เช่น ร้านกาแฟ, 7-Eleven"></label>
@@ -445,7 +447,7 @@ function txForm(mode, t) {
         else r = await api('pendingSave', { id: t.id, f, force: !!t.dup });
         if (!r.ok) { toast(r.error || 'บันทึกไม่สำเร็จ'); $('#fSave').disabled = false; return; }
         if (r.dup) { toast('⚠️ สลิปนี้อาจบันทึกไปแล้ว'); const p = D.pending.find(x => x.id === t.id); return txForm('slip', Object.assign({}, p, { _img: t._img })); }
-        closeSheet(); toast('✅ บันทึก' + TYPE_TH[f.type] + ' ' + baht(String(f.amount).replace(/[,฿\s]/g, '')) + ' แล้ว');
+        closeSheet(); toast('✅ บันทึก' + TYPE_TH[f.type] + ' ' + baht(String(f.amount).replace(/[,฿\s]/g, '')) + ' แล้ว' + (r.note ? '\n' + r.note : ''), r.note ? 7000 : 0);
         afterSlipQueue();
       } catch (e) { $('#fSave').disabled = false; }
     };
