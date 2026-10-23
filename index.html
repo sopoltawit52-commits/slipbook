@@ -54,6 +54,14 @@ header.top .sub{opacity:.85;font-size:14px}
 .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
 .bar>i{display:block;height:100%;background:var(--exp);border-radius:6px}
 .bar>i.ok{background:var(--brand)} .bar>i.mid{background:var(--accent)}
+.plan .big{font-size:30px;line-height:1.1}
+.plan .st{border-radius:12px;padding:8px 10px;margin-top:10px;font-size:14px;background:var(--soft)}
+.plan .st.warn{background:var(--warn-bg);color:var(--warn)}
+.plan .st.over,.plan .st.short{background:color-mix(in srgb,var(--exp) 14%,transparent);color:var(--exp)}
+.plan details{margin-top:10px;font-size:14px}
+.plan summary{cursor:pointer;color:var(--muted)}
+.plan .calc{display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin-top:6px}
+.plan .calc .tot{border-top:1px solid var(--line);padding-top:4px;font-weight:600}
 .catrow{padding:8px 0;border-bottom:1px solid var(--line)} .catrow:last-child{border:0}
 .catrow .top{display:flex;justify-content:space-between;gap:8px;font-size:15px}
 .alert{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer}
@@ -77,7 +85,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .btn{border:0;border-radius:12px;padding:12px 16px;font-weight:600;cursor:pointer;background:var(--soft);color:var(--ink);width:100%}
 .btn.pri{background:var(--brand);color:var(--brand-ink)}
 .btn.dng{background:transparent;color:var(--exp);border:1px solid var(--line)}
-.btn.sm{width:auto;padding:8px 12px;font-size:14px}
+.btn.sm{width:auto;padding:8px 12px;font-size:14px;white-space:nowrap;flex:none}
 .btn:disabled{opacity:.5}
 .row{display:flex;gap:8px;align-items:center}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--bg);border-radius:12px;padding:4px;gap:4px;margin-bottom:12px;border:1px solid var(--line)}
@@ -173,6 +181,7 @@ nav.tabs .plus span{width:52px;height:52px;border-radius:18px;background:linear-
       </div>
       <div id="totalBudget"></div>
     </div>
+    <div class="card plan" id="planCard" hidden></div>
     <div class="card"><h3>รายจ่ายตามหมวด <small id="catHint"></small></h3><div id="catList"></div></div>
     <div class="card"><h3>รายการล่าสุด <button class="btn sm" data-tab="list">ดูทั้งหมด</button></h3><div id="recent"></div></div>
   </section>
@@ -207,6 +216,7 @@ nav.tabs .plus span{width:52px;height:52px;border-radius:18px;background:linear-
       <div class="menu-l" data-go="pending"><div class="e">📌</div><div class="m">สลิปรอยืนยัน</div><span class="badge" id="pendBadge" hidden></span></div>
       <div class="menu-l" data-go="rec"><div class="e">🔁</div><div class="m">รายการประจำ<div class="muted small">บันทึกอัตโนมัติทุกเดือน</div></div>›</div>
       <div class="menu-l" data-go="balance"><div class="e">💵</div><div class="m">ตั้งยอดเงินคงเหลือ</div>›</div>
+      <div class="menu-l" data-go="plan"><div class="e">📅</div><div class="m">วันเงินเดือนออก / เงินออม<div class="muted small">ใช้คำนวณยอดใช้ได้ต่อวัน</div></div>›</div>
       <div class="menu-l" data-go="profile"><div class="e">🏦</div><div class="m">ชื่อ / ชื่อบัญชีธนาคาร<div class="muted small">ใช้แยกเงินเข้า-ออกจากสลิป</div></div>›</div>
       <div class="menu-l" data-go="help"><div class="e">❓</div><div class="m">วิธีใช้</div>›</div>
       <div class="menu-l" id="themeBtn"><div class="e">🌓</div><div class="m">ธีม <span class="muted small" id="themeLbl"></span></div>›</div>
@@ -339,6 +349,7 @@ function renderHome() {
     $('#balBig').textContent = baht(D.balance.balance);
     $('#balSub').textContent = 'ตั้งยอด ' + baht(D.balance.base) + ' เมื่อ ' + thDate(D.user.baseAt.split(' ')[0]);
   } else { $('#balBig').textContent = 'ยังไม่ได้ตั้งยอด'; $('#balSub').textContent = 'กด "ตั้งยอด" ใส่เงินที่มีตอนนี้ครั้งเดียว'; }
+  renderPlan();
   const curMonth = S.ym === D.today.slice(0, 7);
   const tb = D.budgets['รวม'];
   $('#totalBudget').innerHTML = tb && curMonth ? budgetRow('งบรวมทั้งเดือน', s.exp, tb) : '';
@@ -352,6 +363,38 @@ function renderHome() {
   }).join('') : '<div class="empty">ยังไม่มีรายจ่ายในเดือนนี้</div>';
   const rec = sortTx(D.tx).slice(0, 6);
   $('#recent').innerHTML = rec.length ? rec.map(txRow).join('') : '<div class="empty">ยังไม่มีรายการ<br>กดปุ่ม ＋ ด้านล่างเพื่อเริ่มบันทึก</div>';
+}
+function renderPlan() {
+  const el = $('#planCard'), p = D.plan;
+  el.hidden = !p; if (!p) return;
+  if (p.need) {
+    el.innerHTML = `<div class="bal"><div><div class="muted small">📅 ใช้ได้ต่อวัน ถึงวันเงินเดือนออก</div><div class="small" style="margin-top:4px">${p.need === 'base' ? 'ตั้งยอดเงินคงเหลือก่อน แล้วระบบจะคำนวณให้ว่าใช้ได้วันละเท่าไร' : 'บอกวันเงินเดือนออก แล้วระบบจะคำนวณให้ว่าใช้ได้วันละเท่าไร'}</div></div>
+      <button class="btn sm pri" data-go="${p.need === 'base' ? 'balance' : 'plan'}">${p.need === 'base' ? 'ตั้งยอด' : 'ตั้งค่า'}</button></div>`;
+    return;
+  }
+  const left = p.leftToday, pct = p.perDay > 0 ? p.spentToday / p.perDay * 100 : (p.spentToday > 0 ? 100 : 0);
+  const msg = p.status === 'short'
+    ? `🔴 เงินไม่พอสำหรับบิลประจำ${p.reserve ? ' + เงินออม' : ''}ถึงวันเงินเดือนออก ขาดอีก ${bahtS(-p.avail)}`
+    : p.status === 'over'
+      ? `🔴 วันนี้ใช้เกินมา ${bahtS(-left)} · ${p.tomorrow === null ? 'พรุ่งนี้เงินเดือนออกแล้ว' : 'พรุ่งนี้จะเหลือวันละ ' + bahtS(p.tomorrow)}`
+      : p.status === 'warn'
+        ? `🟡 ใกล้ถึงเพดานของวันนี้แล้ว (${Math.round(pct)}%)`
+        : `🟢 อยู่ในเกณฑ์${p.tomorrow === null ? ' · พรุ่งนี้เงินเดือนออก' : ' · ถ้าใช้ตามนี้ พรุ่งนี้ได้วันละ ' + bahtS(p.tomorrow)}`;
+  const row = (l, v, c) => `<span${c ? ` class="${c}"` : ''}>${l}</span><span class="num${c ? ' ' + c : ''}">${v}</span>`;
+  el.innerHTML = `<div class="bal"><div><div class="muted small">📅 วันนี้ยังใช้ได้อีก</div>
+      <div class="big num ${left < 0 ? 'exp' : ''}">${bahtS(left)}</div>
+      <div class="muted small">เพดานวันนี้ ${bahtS(p.perDay)} · ใช้ไปแล้ว ${bahtS(p.spentToday)}</div></div>
+      <button class="btn sm" data-go="plan" aria-label="ตั้งค่าวันเงินเดือนออก">⚙️</button></div>
+    <div class="bar"><i class="${pct >= 100 ? '' : pct >= 80 ? 'mid' : 'ok'}" style="width:${Math.max(3, Math.min(100, pct))}%"></i></div>
+    <div class="muted small" style="margin-top:8px">เงินเดือนออก ${thDay(p.payday)} · อีก ${p.daysLeft} วัน (นับวันนี้)</div>
+    <div class="st ${p.status}">${msg}</div>
+    <details><summary>ดูวิธีคิด</summary><div class="calc">
+      ${row('เงินคงเหลือตอนเริ่มวัน', bahtS(p.startBal))}
+      ${p.upcoming.map(u => row('− ' + esc(u.title) + ' (' + thDate(u.date) + ')', bahtS(u.amount), 'exp')).join('')}
+      ${p.reserve ? row('− กันเงินออม', bahtS(p.reserve), 'exp') : ''}
+      ${row('= ใช้ได้ถึงวันเงินเดือนออก', bahtS(p.avail), 'tot')}
+      ${row('÷ ' + p.daysLeft + ' วัน', bahtS(p.perDay) + '/วัน')}
+    </div><p class="muted small" style="margin:8px 0 0">เพดานของวันคิดจากยอดตอนเริ่มวัน จึงไม่ขยับระหว่างวัน ถ้าวันนี้ใช้น้อย พรุ่งนี้จะได้มากขึ้น ถ้าใช้เกิน พรุ่งนี้จะลดลง · บิลประจำดึงจาก "รายการประจำ"</p></details>`;
 }
 function budgetRow(label, spent, budget) {
   const pct = Math.round(spent / budget * 100), left = budget - spent;
@@ -590,6 +633,22 @@ const GO = {
         if (r.ok) { toast('✅ เพิ่มแล้ว' + (r.note ? ' — ' + r.note : '')); GO.rec(); } else toast(r.error);
       };
       root.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm('ยกเลิกรายการประจำนี้?')) return; const r = await api('recDel', { id: b.dataset.del }); if (r.ok) GO.rec(); else toast(r.error); });
+    });
+  },
+  plan() {
+    const u = D.user || {}, pd = u.payDay || 0;
+    const opts = Array.from({ length: 30 }, (_, i) => `<option value="${i + 1}"${pd === i + 1 ? ' selected' : ''}>วันที่ ${i + 1}</option>`).join('');
+    openSheet(head('📅 วันเงินเดือนออก / เงินออม') + `<label class="field"><span>เงินเดือนออกวันที่</span><select id="pDay"><option value="0"${!pd ? ' selected' : ''}>— ยังไม่ตั้ง —</option>${opts}<option value="31"${pd === 31 ? ' selected' : ''}>สิ้นเดือน (วันสุดท้ายของเดือน)</option></select></label>
+      <label class="field" style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="pShift" style="width:auto"${u.payShift !== false ? ' checked' : ''}><span style="margin:0;font-size:15px;color:var(--ink)">ถ้าตรงเสาร์–อาทิตย์ เงินออกวันศุกร์ก่อนหน้า</span></label>
+      <label class="field"><span>กันเงินออมไว้ก่อน (บาท) — ไม่นำมาคิดเป็นเงินใช้ได้</span><input class="amount-in" id="pRes" inputmode="decimal" value="${u.reserve || ''}" placeholder="0"></label>
+      <button class="btn pri" id="pSave">บันทึก</button>
+      <p class="muted small">ใช้ได้ต่อวัน = (เงินคงเหลือตอนเริ่มวัน − บิลประจำที่จะตัดก่อนเงินเดือนออก − เงินออม) ÷ จำนวนวันที่เหลือ<br>ยอดนี้แม่นเท่ากับเงินคงเหลือ ถ้าไม่ตรงกับเงินจริง กด "ตั้งยอด" ใหม่ได้ทุกเมื่อ</p>`, () => {
+      $('#pSave').onclick = async () => {
+        const reserve = Number(($('#pRes').value || '0').replace(/,/g, ''));
+        if (!(reserve >= 0)) return toast('ใส่เงินออมเป็นตัวเลข');
+        const r = await api('plan', { payDay: Number($('#pDay').value), reserve, shift: $('#pShift').checked });
+        if (r.ok) { closeSheet(); toast('✅ บันทึกแล้ว'); } else toast(r.error);
+      };
     });
   },
   profile() {
