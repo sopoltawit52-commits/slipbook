@@ -93,6 +93,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);outline-o
 .seg button.on[data-v="expense"]{background:var(--exp);color:#fff}
 .seg button.on[data-v="income"]{background:var(--inc);color:#fff}
 .seg button.on[data-v="transfer"]{background:var(--self);color:#fff}
+.seg button.on[data-v="bank"],.seg button.on[data-v="cash"]{background:var(--brand);color:var(--brand-ink)}
+.seg.need{border-color:var(--exp)}
+.wal{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.wal .w{background:var(--soft);border-radius:12px;padding:8px 10px}
+.wal .w .l{font-size:12px;color:var(--muted)} .wal .w .v{font-weight:600}
+.walbtn{display:flex;gap:8px;margin-top:8px} .walbtn .btn{flex:1;padding:9px 8px;font-size:14px}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:20}
 nav.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 nav.tabs button{border:0;background:none;padding:8px 0 10px;font-size:12px;color:var(--muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
@@ -173,6 +179,10 @@ nav.tabs .plus span{width:52px;height:52px;border-radius:18px;background:linear-
       <div class="bal">
         <div><div class="muted small">💵 เงินคงเหลือ</div><div class="big num" id="balBig">—</div><div class="muted small" id="balSub"></div></div>
         <button class="btn sm" data-go="balance">ตั้งยอด</button>
+      </div>
+      <div id="walBox" hidden>
+        <div class="wal" id="walRow"></div>
+        <div class="walbtn"><button class="btn" data-go="moveOut">🏧 ถอนเงินสด</button><button class="btn" data-go="moveIn">🏦 ฝากเข้าบัญชี</button></div>
       </div>
       <div class="stats">
         <div class="stat"><div class="l">รายรับ</div><div class="v num inc" id="sInc">0</div></div>
@@ -273,7 +283,10 @@ const thDate = iso => { const [y, m, d] = String(iso).split('-').map(Number); re
 const thDay = iso => { const d = new Date(iso + 'T00:00:00'); return ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'][d.getDay()] + ' ' + thDate(iso); };
 const ymLabel = ym => { const [y, m] = ym.split('-').map(Number); return TH_M[m - 1] + ' ' + (y + 543); };
 const shiftYm = (ym, k) => { let [y, m] = ym.split('-').map(Number); m += k; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return y + '-' + String(m).padStart(2, '0'); };
-const icon = t => t.type === 'income' ? '🟢' : t.type === 'transfer' ? '🔁' : catIcon(t.category);
+const icon = t => t.type === 'income' ? '🟢' : t.type === 'transfer' ? (t.wallet === 'เงินสด' ? '🏧' : t.wallet === 'บัญชี' ? '🏦' : '🔁') : catIcon(t.category);
+const hasWal = () => !!(D && D.user && 'cashBase' in D.user);   // backend รองรับกระเป๋าเงินสดแล้ว
+const walOf = t => t.wallet === 'เงินสด' ? 'cash' : 'bank';
+const moveLbl = t => t.type === 'transfer' && t.wallet === 'เงินสด' ? 'ถอนเงินสด' : t.type === 'transfer' && t.wallet === 'บัญชี' ? 'ฝากเข้าบัญชี' : '';
 const CAT_IC = { 'อาหาร': '🍜', 'ของใช้': '🛒', 'เดินทาง': '⛽', 'บิล': '💡', 'ที่พัก': '🏠', 'ช้อป': '🛍️', 'สุขภาพ': '💊', 'การศึกษา': '📚', 'บันเทิง': '🎬', 'ผ่อน': '💳', 'ครอบครัว': '🙏' };
 const catIcon = c => { for (const k in CAT_IC) if (String(c).indexOf(k) === 0) return CAT_IC[k]; return '🔴'; };
 let toastT;
@@ -336,7 +349,7 @@ function txRow(t) {
   const sign = t.type === 'income' ? '+' : t.type === 'transfer' ? '' : '−';
   const cls = t.type === 'income' ? 'inc' : t.type === 'transfer' ? 'self' : 'exp';
   const title = t.party || t.note || t.category;
-  const sub = [t.type === 'transfer' ? 'โอนตัวเอง' : t.category, t.party && t.note ? t.note : '', t.time].filter(Boolean).join(' · ');
+  const sub = [t.type === 'transfer' ? (moveLbl(t) || 'โอนตัวเอง') : t.category, t.type !== 'transfer' && t.wallet === 'เงินสด' ? '💵 เงินสด' : '', t.party && t.note ? t.note : '', t.time].filter(Boolean).join(' · ');
   return `<div class="tx" data-tx="${esc(t.id)}"><div class="ic">${icon(t)}</div><div class="mid"><div class="t1">${esc(title)}</div><div class="t2">${esc(sub)}</div></div><div class="amt ${cls}">${sign}${fmt(t.amount)}</div></div>`;
 }
 function renderHome() {
@@ -349,6 +362,15 @@ function renderHome() {
     $('#balBig').textContent = baht(D.balance.balance);
     $('#balSub').textContent = 'ตั้งยอด ' + baht(D.balance.base) + ' เมื่อ ' + thDate(D.user.baseAt.split(' ')[0]);
   } else { $('#balBig').textContent = 'ยังไม่ได้ตั้งยอด'; $('#balSub').textContent = 'กด "ตั้งยอด" ใส่เงินที่มีตอนนี้ครั้งเดียว'; }
+  $('#walBox').hidden = !hasWal();
+  if (hasWal()) {
+    const b = D.balance;
+    $('#walRow').innerHTML = b && 'cash' in b
+      ? `<div class="w"><div class="l">🏦 บัญชี</div><div class="v num">${baht(b.bank)}</div></div>
+         <div class="w" data-go="balance" style="cursor:pointer"><div class="l">💵 เงินสด${b.cashSet ? '' : ' · <u>ตั้งยอด</u>'}</div><div class="v num${b.cash < 0 ? ' exp' : ''}">${baht(b.cash)}</div></div>`
+      : '';
+    $('#walRow').hidden = !(b && 'cash' in b);
+  }
   renderPlan();
   const curMonth = S.ym === D.today.slice(0, 7);
   const tb = D.budgets['รวม'];
@@ -457,6 +479,7 @@ function txForm(mode, t) {
     (mode === 'slip' && t.dup ? '<div class="dup">⚠️ สลิปนี้อาจบันทึกไปแล้ว ตรวจดูก่อนกดบันทึก</div>' : '') +
     (t._img ? `<img class="slipthumb" src="${t._img}" alt="รูปสลิป">` : '') +
     `<div class="seg" id="fType">${['expense', 'income', 'transfer'].map(v => `<button type="button" data-v="${v}" class="${v === t.type ? 'on' : ''}">${TYPE_TH[v]}</button>`).join('')}</div>
+    ${hasWal() ? `<div id="fWalWrap"><div class="muted small" id="fWalL" style="margin:-4px 0 4px">กระเป๋า</div><div class="seg" id="fWal" style="grid-template-columns:1fr 1fr"><button type="button" data-v="bank">🏦 บัญชี</button><button type="button" data-v="cash">💵 เงินสด</button></div></div>` : ''}
     <label class="field"><span>จำนวนเงิน (บาท)</span><input class="amount-in" id="fAmt" inputmode="decimal" placeholder="0.00" value="${t.amount === '' ? '' : esc(t.amount)}"></label>
     <div class="grid2"><label class="field"><span>วันที่</span><input type="date" id="fDate" value="${esc(t.date)}" max="${localToday() > D.today ? localToday() : D.today}"></label>
     <label class="field"><span>เวลา</span><input type="time" id="fTime" value="${esc(t.time)}"></label></div>
@@ -468,20 +491,35 @@ function txForm(mode, t) {
     ${mode === 'edit' ? '<div style="height:8px"></div><button class="btn dng" id="fDel">🗑 ลบรายการนี้</button>' : ''}
     ${mode === 'slip' ? '<div style="height:8px"></div><button class="btn dng" id="fCancel">ไม่บันทึกสลิปนี้</button>' : ''}`, root => {
     let type = t.type;
+    // กระเป๋า: กรอกเอง = ต้องเลือกทุกครั้ง · สลิป = บัญชี · แก้ไข = ค่าเดิม
+    let wal = mode === 'add' ? null : t.type === 'transfer' ? null : walOf(t);
+    const syncWal = () => {
+      if (!$('#fWal')) return;
+      $('#fWalWrap').hidden = type === 'transfer';
+      $('#fWalL').textContent = type === 'income' ? 'รับเข้ากระเป๋าไหน?' : 'จ่ายจากกระเป๋าไหน?';
+      root.querySelectorAll('#fWal button').forEach(b => b.classList.toggle('on', b.dataset.v === wal));
+    };
+    root.querySelectorAll('#fWal button').forEach(b => b.onclick = () => { wal = b.dataset.v; $('#fWal').classList.remove('need'); syncWal(); });
     const syncType = () => {
       root.querySelectorAll('#fType button').forEach(b => b.classList.toggle('on', b.dataset.v === type));
       $('#fCat').innerHTML = catOpts(type, t.category);
       $('#fCatWrap').hidden = type === 'transfer';
       $('#fPartyL').textContent = type === 'income' ? 'รับจาก' : type === 'transfer' ? 'โอนไปบัญชี' : 'จ่ายให้ / ร้าน';
       if (mode === 'slip' && (t.from || t.to)) $('#fParty').value = type === 'income' ? (t.from || '') : (t.to || '');
+      syncWal();
     };
     root.querySelectorAll('#fType button').forEach(b => b.onclick = () => { type = b.dataset.v; syncType(); });
     syncType();
     if (mode === 'add') setTimeout(() => $('#fAmt').focus(), 250);
-    const read = () => ({ type, amount: $('#fAmt').value, date: $('#fDate').value, time: $('#fTime').value, category: $('#fCat').value, party: $('#fParty').value, note: $('#fNote').value });
+    const read = () => {
+      const f = { type, amount: $('#fAmt').value, date: $('#fDate').value, time: $('#fTime').value, category: $('#fCat').value, party: $('#fParty').value, note: $('#fNote').value };
+      if (hasWal()) { if (type !== 'transfer') f.wallet = wal; else if (t.type !== 'transfer' || mode !== 'edit') f.wallet = ''; }
+      return f;
+    };
     $('#fSave').onclick = async () => {
       const f = read();
       if (!(Number(String(f.amount).replace(/[,฿\s]/g, '')) > 0)) { toast('ใส่จำนวนเงิน'); $('#fAmt').focus(); return; }
+      if (hasWal() && type !== 'transfer' && !wal) { toast(type === 'income' ? 'เลือกว่ารับเข้า 🏦 บัญชี หรือ 💵 เงินสด' : 'เลือกว่าจ่ายจาก 🏦 บัญชี หรือ 💵 เงินสด'); $('#fWal').classList.add('need'); $('#fWal').scrollIntoView({ block: 'center' }); return; }
       $('#fSave').disabled = true;
       try {
         let r;
@@ -490,7 +528,7 @@ function txForm(mode, t) {
         else r = await api('pendingSave', { id: t.id, f, force: !!t.dup });
         if (!r.ok) { toast(r.error || 'บันทึกไม่สำเร็จ'); $('#fSave').disabled = false; return; }
         if (r.dup) { toast('⚠️ สลิปนี้อาจบันทึกไปแล้ว'); const p = D.pending.find(x => x.id === t.id); return txForm('slip', Object.assign({}, p, { _img: t._img })); }
-        closeSheet(); toast('✅ บันทึก' + TYPE_TH[f.type] + ' ' + baht(String(f.amount).replace(/[,฿\s]/g, '')) + ' แล้ว' + (r.note ? '\n' + r.note : ''), r.note ? 7000 : 0);
+        closeSheet(); toast('✅ บันทึก' + TYPE_TH[f.type] + ' ' + baht(String(f.amount).replace(/[,฿\s]/g, '')) + (f.wallet === 'cash' ? ' (💵 เงินสด)' : '') + ' แล้ว' + (r.note ? '\n' + r.note : ''), r.note ? 7000 : 0);
         afterSlipQueue();
       } catch (e) { $('#fSave').disabled = false; }
     };
@@ -499,6 +537,30 @@ function txForm(mode, t) {
       const r = await api('delete', { id: t.id }); if (r.ok) { closeSheet(); toast('🗑 ลบแล้ว'); } else toast(r.error);
     };
     if (mode === 'slip') $('#fCancel').onclick = async () => { await api('pendingCancel', { id: t.id }); closeSheet(); toast('ยกเลิกสลิปแล้ว'); afterSlipQueue(); };
+  });
+}
+
+/** ย้ายเงินระหว่างกระเป๋า: out = ถอนเงินสด (บัญชี → เงินสด), in = ฝากเข้าบัญชี (เงินสด → บัญชี) */
+function moveForm(dir) {
+  const out = dir === 'out';
+  openSheet(head(out ? '🏧 ถอนเงินสด' : '🏦 ฝากเงินสดเข้าบัญชี') +
+    `<p class="muted small" style="margin-top:0">${out ? '🏦 บัญชี → 💵 เงินสด' : '💵 เงินสด → 🏦 บัญชี'} · ย้ายเงินของตัวเอง ไม่นับเป็นรายรับ-รายจ่าย ยอดรวมไม่เปลี่ยน</p>
+    <label class="field"><span>จำนวนเงิน (บาท)</span><input class="amount-in" id="mAmt" inputmode="decimal" placeholder="เช่น 1000"></label>
+    <div class="grid2"><label class="field"><span>วันที่</span><input type="date" id="mDate" value="${localToday()}" max="${localToday() > D.today ? localToday() : D.today}"></label>
+    <label class="field"><span>เวลา</span><input type="time" id="mTime" value="${localNow()}"></label></div>
+    <label class="field"><span>บันทึกช่วยจำ</span><input id="mNote" placeholder="${out ? 'เช่น ตู้ ATM หน้าบ้าน' : 'เช่น ฝากที่ธนาคาร'}"></label>
+    <button class="btn pri" id="mSave">✔ บันทึก</button>`, () => {
+    setTimeout(() => $('#mAmt').focus(), 250);
+    $('#mSave').onclick = async () => {
+      const amount = $('#mAmt').value.trim();
+      if (!(Number(amount.replace(/[,฿\s]/g, '')) > 0)) { toast('ใส่จำนวนเงิน'); $('#mAmt').focus(); return; }
+      $('#mSave').disabled = true;
+      try {
+        const r = await api('move', { dir, amount, date: $('#mDate').value, time: $('#mTime').value, note: $('#mNote').value });
+        if (!r.ok) { toast(r.error || 'บันทึกไม่สำเร็จ'); $('#mSave').disabled = false; return; }
+        closeSheet(); toast('✅ ' + (out ? 'ถอนเงินสด ' : 'ฝากเข้าบัญชี ') + baht(amount.replace(/[,฿\s]/g, '')) + ' แล้ว');
+      } catch (e) { $('#mSave').disabled = false; }
+    };
   });
 }
 
@@ -594,13 +656,20 @@ const GO = {
   balance() {
     const b = D.balance;
     openSheet(head('💵 เงินคงเหลือ') + (b ? `<div class="card" style="box-shadow:none"><div class="big num" style="font-size:28px">${baht(b.balance)}</div>
-      <div class="muted small">ยอดตั้งต้น ${baht(b.base)} (${thDate(D.user.baseAt.split(' ')[0])} ${esc(D.user.baseAt.split(' ')[1] || '')} น.)<br>🟢 รับเพิ่ม ${baht(b.inc)} · 🔴 จ่ายไป ${baht(b.exp)} · ${b.n} รายการ (ไม่นับโอนตัวเอง)</div></div>` : '') +
+      <div class="muted small">ยอดตั้งต้น ${baht(b.base)} (${thDate(D.user.baseAt.split(' ')[0])} ${esc(D.user.baseAt.split(' ')[1] || '')} น.)<br>🟢 รับเพิ่ม ${baht(b.inc)} · 🔴 จ่ายไป ${baht(b.exp)} · ${b.n} รายการ (ไม่นับโอนตัวเอง)</div>
+      ${'cash' in b ? `<div class="wal"><div class="w"><div class="l">🏦 บัญชี</div><div class="v num">${baht(b.bank)}</div></div><div class="w"><div class="l">💵 เงินสด</div><div class="v num">${baht(b.cash)}</div></div></div>` : ''}</div>` : '') +
+      (b && hasWal() ? `<label class="field"><span>💵 เงินสดที่มีอยู่ตอนนี้ (ในกระเป๋า / ที่บ้าน)</span><input class="amount-in" id="cAmt" inputmode="decimal" placeholder="เช่น 1500"></label>
+      <button class="btn" id="cSave">ตั้งยอดเงินสด</button>
+      <p class="muted small">ยอดรวมไม่เปลี่ยน แค่แยกว่าในยอดรวมเป็นเงินสดเท่าไร ส่วนที่เหลือคือเงินในบัญชี${b.cashSet ? ' · ตั้งไว้ล่าสุด ' + esc(thDate(b.cashAt.split(' ')[0])) + ' ' + esc(b.cashAt.split(' ')[1] || '') + ' น.' : ''}</p><hr style="border:0;border-top:1px solid var(--line);margin:14px 0">` : '') +
       `<label class="field"><span>ยอดเงินที่มีตอนนี้ทั้งหมด (ทุกบัญชี + เงินสด + e-wallet)</span><input class="amount-in" id="bAmt" inputmode="decimal" placeholder="เช่น 25000"></label>
       <button class="btn pri" id="bSave">${b ? 'ตั้งยอดใหม่' : 'ตั้งยอด'}</button>
       <p class="muted small">ตั้งครั้งเดียว ระบบจะบวกรายรับ ลบรายจ่ายที่บันทึกหลังจากนี้ให้อัตโนมัติ ถ้าไม่ตรงกับเงินจริงตั้งใหม่ได้ทุกเมื่อ</p>`, () => {
       $('#bSave').onclick = async () => { const v = $('#bAmt').value.trim(); if (!v) return toast('ใส่ยอดเงิน'); const r = await api('balance', { amount: v }); if (r.ok) { closeSheet(); toast('✅ ตั้งยอดแล้ว'); } else toast(r.error); };
+      if ($('#cSave')) $('#cSave').onclick = async () => { const v = $('#cAmt').value.trim(); if (!v) return toast('ใส่ยอดเงินสด'); const r = await api('cash', { amount: v }); if (r.ok) { closeSheet(); toast('✅ ตั้งยอดเงินสดแล้ว'); } else toast(r.error); };
     });
   },
+  moveOut() { moveForm('out'); },
+  moveIn() { moveForm('in'); },
   budgetEdit(cat) {
     const cur = cat ? D.budgets[cat] : '';
     openSheet(head('💰 ตั้งงบต่อเดือน') + `<label class="field"><span>หมวด</span><select id="gCat"><option value="รวม">รวมทั้งเดือน (ทุกหมวด)</option>${D.cats.expense.map(c => `<option${c === cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
@@ -665,6 +734,7 @@ const GO = {
       <li><b>＋ กรอกเอง</b> สำหรับเงินสด หรือรายการย้อนหลัง</li>
       <li><b>รายการ</b> ค้นหา กรองตามประเภท/หมวด กดรายการเพื่อแก้หรือลบ ดาวน์โหลด CSV ได้</li>
       <li><b>โอนตัวเอง</b> เช่น โอนเข้า e-wallet ของตัวเอง ไม่นับเป็นรายรับ-รายจ่าย</li>
+      <li><b>กระเป๋าเงินสด</b> หน้าหลักแยกยอด 🏦 บัญชี / 💵 เงินสด · กดเงินจากตู้ → ปุ่ม <b>🏧 ถอนเงินสด</b> · กรอกเองต้องเลือกทุกครั้งว่าจ่ายจากกระเป๋าไหน · สลิปโอน = บัญชี</li>
       <li><b>งบ</b> ตั้งงบรายหมวดหรือรวมทั้งเดือน แถบสีเหลือง = ใช้เกิน 80% แดง = เกินงบ</li>
       <li><b>รายการประจำ</b> ค่าเช่า เงินเดือน ฯลฯ บันทึกให้อัตโนมัติทุกเดือน</li>
       <li><b>เงินคงเหลือ</b> ตั้งยอดเงินที่มีครั้งเดียว ระบบคำนวณต่อให้</li>
@@ -693,8 +763,8 @@ $('#q').oninput = e => { S.q = e.target.value; renderList(); };
 $('#catFilter').onchange = e => { S.cat = e.target.value; renderList(); };
 $('#rangeSel').onchange = e => { S.range = e.target.value; render(); };
 $('#csvBtn').onclick = () => {
-  const rows = [['วันที่', 'เวลา', 'ประเภท', 'หมวด', 'จำนวนเงิน', 'คู่รายการ', 'ธนาคาร', 'บันทึก', 'เลขอ้างอิง', 'ที่มา']]
-    .concat(filtered().map(t => [t.date, t.time, TYPE_TH[t.type], t.category, t.amount, t.party, t.bank, t.note, t.ref, t.source]));
+  const rows = [['วันที่', 'เวลา', 'ประเภท', 'หมวด', 'จำนวนเงิน', 'คู่รายการ', 'ธนาคาร', 'บันทึก', 'เลขอ้างอิง', 'ที่มา', 'กระเป๋า']]
+    .concat(filtered().map(t => [t.date, t.time, TYPE_TH[t.type], t.category, t.amount, t.party, t.bank, t.note, t.ref, t.source, moveLbl(t) || (t.type === 'transfer' ? '' : t.wallet === 'เงินสด' ? 'เงินสด' : 'บัญชี')]));
   const csv = '﻿' + rows.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'สมุดสลิป_' + (S.range === 'all' ? 'ทั้งหมด' : S.ym) + '.csv'; a.click();
